@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "artdetectors"
+version = "0.1.0"
+description = "CLIP, BLIP, and SuSy based image analysis pipeline"
+authors = [
+  { name = "Your Name" }
+]
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "torch",
+  "torchvision",
+  "Pillow",
+  "transformers",
+  "huggingface_hub",
+  "ftfy",
+  "regex",
+  "tqdm",
+  # NOTE: CLIP is not on PyPI; mention in README: `pip install git+https://github.com/openai/CLIP.git`
+]
+
+[project.urls]
+Homepage = "https://github.com/yourname/artdetectors"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"artdetectors" = ["data/style_clip_features.pt", "data/style.txt"]
+
+

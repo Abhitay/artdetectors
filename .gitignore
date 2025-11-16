@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual envs
+.venv/
+venv/
+env/
+*.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS junk
+.DS_Store
+
+# Build / dist
+build/
+dist/
+*.egg-info/
+
+# VSCode / PyCharm
+.vscode/
+.idea/
+
+# Hugging Face / model cache (do NOT commit big cached models)
+.cache/
