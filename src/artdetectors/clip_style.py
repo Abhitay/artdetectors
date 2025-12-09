@@ -70,7 +70,7 @@ class ClipStylePredictor:
             image_features = self.clip_model.encode_image(image_input)
             image_features /= image_features.norm(dim=-1, keepdim=True)
 
-        similarity_probs = (100.0 * image_features @ self.text_features.T).softmax(dim=-1)[0]
+        similarity_probs = (100.0 * image_features @ self.text_features.T.to(image_features.dtype)).softmax(dim=-1)[0]
 
         style_scores: Dict[str, float] = {}
         for idx, style in enumerate(self.style_names):

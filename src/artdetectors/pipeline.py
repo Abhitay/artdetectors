@@ -1,3 +1,5 @@
+# src/artdetectors/pipeline.py
+
 from pathlib import Path
 from typing import Union, Optional, Dict, List
 
@@ -8,16 +10,34 @@ from torchvision import transforms
 
 from .clip_style import ClipStylePredictor
 from .blip_caption import BlipCaptioner
+from .restyle import ImageRestyler
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+def _get_default_device() -> str:
+    """
+    Prefer MPS on Apple Silicon, then CUDA, then CPU.
+    """
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return "mps"
+    if torch.cuda.is_available():
+        return "cuda"
+    return "cpu"
+
+
+DEVICE = _get_default_device()
 
 
 class ImageAnalysisPipeline:
     """
     Unified pipeline:
-      - CLIP style prediction
-      - BLIP captioning
-      - SuSy authenticity/source classification
+
+      FAST (detectors only):
+        - CLIP style prediction
+        - BLIP captioning
+        - SuSy authenticity/source classification
+
+      SLOW (separate call):
+        - Image restyling via Stable Diffusion XL img2img
     """
 
     def __init__(
@@ -27,10 +47,11 @@ class ImageAnalysisPipeline:
         susy_repo_id: str = "HPAI-BSC/SuSy",
         susy_filename: str = "SuSy.pt",
         device: str = DEVICE,
+        enable_restyler: bool = True,
     ):
         self.device = device
 
-         # ----- CLIP Style Predictor -----
+        # ----- CLIP Style Predictor -----
         if style_features_cache is not None:
             cache_path = Path(style_features_cache)
         else:
@@ -59,10 +80,12 @@ class ImageAnalysisPipeline:
         self.susy_model = torch.jit.load(model_path, map_location=device)
         self.susy_model.eval()
 
-        self.susy_preprocess = transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-        ])
+        self.susy_preprocess = transforms.Compose(
+            [
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+            ]
+        )
 
         self.susy_class_names: List[str] = [
             "authentic",
@@ -72,6 +95,11 @@ class ImageAnalysisPipeline:
             "midjourney_tti",
             "realisticSDXL",
         ]
+
+        # ---------- Restyler (SDXL img2img) ----------
+        self.restyler: Optional[ImageRestyler] = (
+            ImageRestyler(device=device) if enable_restyler else None
+        )
 
     # ---------- internal helpers ----------
 
@@ -100,7 +128,7 @@ class ImageAnalysisPipeline:
             "probs": prob_dict,
         }
 
-    # ---------- public API ----------
+    # ---------- public API (FAST) ----------
 
     def analyze(
         self,
@@ -108,6 +136,16 @@ class ImageAnalysisPipeline:
         topk_styles: int = 5,
         caption_prompt: Optional[str] = None,
     ) -> Dict[str, object]:
+        """
+        Fast detectors-only call.
+
+        Returns:
+            {
+                "styles": [...],   # CLIP style predictions
+                "caption": "...",  # BLIP caption
+                "susy": {...},     # SuSy authenticity/source prediction
+            }
+        """
         pil_img = self._to_pil(image)
 
         styles = self.style_predictor.predict(pil_img, topk_styles=topk_styles)
@@ -118,4 +156,54 @@ class ImageAnalysisPipeline:
             "styles": styles,
             "caption": caption,
             "susy": susy_result,
+        }
+
+    # ---------- public API (SLOW: image generation) ----------
+
+    def restyle_image(
+        self,
+        image: Union[str, Path, Image.Image],
+        target_style: str,
+        caption_prompt: Optional[str] = None,
+        negative_prompt: Optional[str] = None,
+        strength: float = 0.3,
+        guidance_scale: float = 5.0,
+        num_inference_steps: int = 30,
+        seed: Optional[int] = None,
+    ) -> Dict[str, object]:
+        """
+        Slow call: recreate the same image in a new style.
+
+        This is separated from `analyze` so that a frontend can:
+          1) call `analyze(...)` for instant detectors output
+          2) optionally call `restyle_image(...)` if the user requests a restyled image
+
+        Returns:
+            {
+                "restyled_image": PIL.Image.Image,
+                "caption_used": "...",
+            }
+        """
+        if self.restyler is None:
+            raise RuntimeError("Restyler is disabled. Initialise with enable_restyler=True.")
+
+        pil_img = self._to_pil(image)
+
+        # Use BLIP caption as semantic base description
+        caption = self.captioner.caption(pil_img, prompt=caption_prompt)
+
+        new_img = self.restyler.restyle(
+            image=pil_img,
+            base_prompt=caption,
+            target_style=target_style,
+            negative_prompt=negative_prompt,
+            strength=strength,
+            guidance_scale=guidance_scale,
+            num_inference_steps=num_inference_steps,
+            seed=seed,
+        )
+
+        return {
+            "restyled_image": new_img,
+            "caption_used": caption,
         }

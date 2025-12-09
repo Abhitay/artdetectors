@@ -5,14 +5,16 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "artdetectors"
 version = "0.1.0"
-description = "CLIP, BLIP, and SuSy based image analysis pipeline"
+description = "CLIP, BLIP, SuSy, and SDXL-based image analysis + restyling pipeline"
 authors = [
   { name = "Your Name" }
 ]
 readme = "README.md"
 requires-python = ">=3.9"
+
 dependencies = [
-  "torch",
+  # core
+  "torch",            # install with MPS build on Apple Silicon
   "torchvision",
   "Pillow",
   "transformers",
@@ -20,19 +22,25 @@ dependencies = [
   "ftfy",
   "regex",
   "tqdm",
-  # NOTE: CLIP is not on PyPI; mention in README: `pip install git+https://github.com/openai/CLIP.git`
+
+  # image restyling (SDXL img2img)
+  "diffusers>=0.31.0",
+  "accelerate>=0.30.0",
+  "safetensors>=0.4.0",
 ]
 
 [project.urls]
 Homepage = "https://github.com/yourname/artdetectors"
 
 [tool.setuptools]
-package-dir = {"" = "src"}
+package-dir = { "" = "src" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-"artdetectors" = ["data/style_clip_features.pt", "data/style.txt"]
-
+"artdetectors" = [
+  "data/style_clip_features.pt",
+  "data/style.txt",
+]
 
